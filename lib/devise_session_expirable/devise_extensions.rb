@@ -7,13 +7,29 @@ module Devise #:nodoc:
   add_module :session_expirable,
     :model => 'devise_session_expirable/model'
 
-  def self.configure_warden_with_expirable! #:nodoc:
-    result = configure_warden_without_expirable!
+  def self.configure_warden! #:nodoc:
     warden_config.failure_app   = DeviseSessionExpirable::Delegator.new
-    result
-  end
+    warden_config.default_scope = Devise.default_scope
+    warden_config.intercept_401 = false
 
-  alias_method_chain :configure_warden!, :expirable
+    Devise.mappings.each_value do |mapping|
+      warden_config.scope_defaults mapping.name, :strategies => mapping.strategies
+
+      warden_config.serialize_into_session(mapping.name) do |record|
+        mapping.to.serialize_into_session(record)
+      end
+
+      warden_config.serialize_from_session(mapping.name) do |key|
+        # Previous versions contained an additional entry at the beginning of
+        # key with the record's class name.
+        args = key[-2, 2]
+        mapping.to.serialize_from_session(*args)
+      end
+    end
+
+    @@warden_config_block.try :call, Devise.warden_config
+    true
+  end
 
   class Mapping #:nodoc:
 
